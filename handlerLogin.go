@@ -6,18 +6,23 @@ import (
 	"time"
 
 	"github.com/JoshuaSE-git/chirpy/internal/auth"
+	"github.com/JoshuaSE-git/chirpy/internal/database"
+)
+
+const (
+	DefaultRefreshTokenExpiration = 60 * 24 * time.Hour
+	DefaultJWTExpiration          = 1 * time.Hour
 )
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
-	defaultExpiration := 1 * time.Hour
 	type parameters struct {
-		Password         string         `json:"password"`
-		Email            string         `json:"email"`
-		ExpiresInSeconds *time.Duration `json:"expires_in_seconds,omitempty"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 	type response struct {
 		User
-		Token string `json:"token"`
+		Token        string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
 	}
 
 	params := parameters{}
@@ -26,10 +31,6 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "couldn't decode parameters", err)
 		return
-	}
-
-	if params.ExpiresInSeconds == nil || *params.ExpiresInSeconds > defaultExpiration {
-		params.ExpiresInSeconds = &defaultExpiration
 	}
 
 	user, err := cfg.db.GetUserByEmail(r.Context(), params.Email)
@@ -44,9 +45,26 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, *params.ExpiresInSeconds)
+	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, DefaultJWTExpiration)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "couldn't create jwt", err)
+		return
+	}
+
+	refreshTokenString, err := auth.MakeRefreshToken()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couldn't create refresh token", err)
+		return
+	}
+
+	refreshToken, err := cfg.db.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
+		Token:     refreshTokenString,
+		UserID:    user.ID,
+		ExpiresAt: time.Now().Add(DefaultRefreshTokenExpiration),
+	})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couldn't create refresh token", err)
+		return
 	}
 
 	respondWithJSON(w, http.StatusOK, response{
@@ -56,6 +74,7 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt: user.UpdatedAt,
 			Email:     user.Email,
 		},
-		Token: token,
+		Token:        token,
+		RefreshToken: refreshToken.Token,
 	})
 }
