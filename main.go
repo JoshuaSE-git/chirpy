@@ -17,6 +17,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	platform       string
+	jwtSecret      string
 }
 
 func main() {
@@ -25,6 +26,18 @@ func main() {
 
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		log.Fatal("DB_URL must be set")
+	}
+	platform := os.Getenv("PLATFORM")
+	if platform == "" {
+		log.Fatal("PLATFORM must be set")
+	}
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET must be set")
+	}
+
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("couldn't connect to database: %v", err)
@@ -34,7 +47,8 @@ func main() {
 	apiCfg := &apiConfig{
 		fileserverHits: atomic.Int32{},
 		db:             dbQueries,
-		platform:       os.Getenv("PLATFORM"),
+		platform:       platform,
+		jwtSecret:      jwtSecret,
 	}
 
 	mux := http.NewServeMux()
@@ -64,3 +78,21 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+/*
+func (cfg *apiConfig) middlewareValidateJWT(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, err := auth.GetBearerToken(r.Header)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "no authorization header", err)
+			return
+		}
+		_, err = auth.ValidateJWT(token, cfg.jwtSecret)
+		if err != nil {
+			respondWithError(w, http.StatusUnauthorized, "unauthorized token", err)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+*/

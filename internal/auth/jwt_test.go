@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -67,5 +69,17 @@ func TestJWT(t *testing.T) {
 				t.Errorf("expected id: %v got: %v", tt.id, id)
 			}
 		})
+	}
+}
+
+func TestGetBearerToken(t *testing.T) {
+	id := uuid.New()
+	want, _ := MakeJWT(id, "secret", 5*time.Hour)
+	header := http.Header{}
+	header.Set("Authorization", fmt.Sprintf("Bearer %s", want))
+
+	got, _ := GetBearerToken(header)
+	if got != want {
+		t.Errorf("got %q want %q", got, want)
 	}
 }
